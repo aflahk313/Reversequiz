@@ -2294,7 +2294,7 @@ function GamePage({
         <div className="ledfx-brand">
           <img
             className="ledfx-brand-logo"
-            src="/logo.jpg"
+            src="/logo.png"
             alt="Quriverse"
           />
         </div>
