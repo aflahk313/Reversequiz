@@ -16,12 +16,14 @@ type GameStatus =
 
 type CandidateResult = {
   candidate: number;
+  candidateName: string;
   identified: boolean;
   stoppingQuestion: number;
   time: number;
 };
 
 type AyahData = {
+  candidateName: string;
   surah: string;
   ayahNumber: string;
   arabic: string;
@@ -94,6 +96,7 @@ const createInitialAyahs = (): AyahData[] =>
   Array.from(
     { length: TOTAL_CANDIDATES },
     () => ({
+      candidateName: "",
       surah: "",
       ayahNumber: "",
       arabic: "",
@@ -271,12 +274,28 @@ function SetupPage() {
         </div>
 
 
-        <a
-          href="/"
-          className="back-link"
-        >
-          ← LIVE MODERATOR
-        </a>
+        <div className="setup-header-actions">
+          <button
+            type="button"
+            className="event-restart-top-button"
+            onClick={async () => {
+              const confirmed = window.confirm(
+                "Restart the event from Candidate 1? Current game results will be cleared. Ayah setup will remain."
+              );
+              if (!confirmed) return;
+              await set(gameRef, initialGame);
+            }}
+          >
+            ↻ RESTART EVENT
+          </button>
+
+          <a
+            href="/"
+            className="back-link"
+          >
+            ← LIVE MODERATOR
+          </a>
+        </div>
 
       </header>
 
@@ -339,6 +358,28 @@ function SetupPage() {
                     AYAH{" "}
                     {index + 1}
                   </div>
+
+                </div>
+
+
+                <div className="field">
+
+                  <label>
+                    CANDIDATE NAME
+                  </label>
+
+                  <input
+                    type="text"
+                    value={ayah.candidateName}
+                    onChange={(event) =>
+                      updateAyah(
+                        index,
+                        "candidateName",
+                        event.target.value
+                      )
+                    }
+                    placeholder={`Candidate ${index + 1} name`}
+                  />
 
                 </div>
 
@@ -583,6 +624,11 @@ function GamePage({
       null
     );
 
+  const buzzRef =
+    useRef<HTMLAudioElement | null>(
+      null
+    );
+
 
   /*
    * Create audio elements once.
@@ -623,6 +669,11 @@ function GamePage({
         "/audio/start.mp3"
       );
 
+    buzzRef.current =
+      new Audio(
+        "/audio/buzz.mp3"
+      );
+
 
     return () => {
 
@@ -644,6 +695,9 @@ function GamePage({
         null;
 
       startRef.current =
+        null;
+
+      buzzRef.current =
         null;
 
     };
@@ -703,7 +757,10 @@ function GamePage({
 
     if (
       game.audioEnabled &&
-      game.musicPlaying
+      game.musicPlaying &&
+      game.status !== "timeout" &&
+      game.status !== "reveal" &&
+      game.status !== "result"
     ) {
 
       music
@@ -765,6 +822,13 @@ function GamePage({
       );
     }
 
+    if (game.status === "timeout") {
+      musicRef.current?.pause();
+      playSound(
+        buzzRef.current
+      );
+    }
+
 
     if (
       game.status ===
@@ -817,11 +881,15 @@ function GamePage({
       const normalized: GameState = {
         ...initialGame,
         ...value,
-        results: Array.isArray(value.results)
+        results: (Array.isArray(value.results)
           ? value.results
           : value.results
             ? Object.values(value.results as unknown as Record<string, CandidateResult>)
-            : [],
+            : []
+        ).map((result) => ({
+          ...result,
+          candidateName: result.candidateName || `Candidate ${result.candidate}`,
+        })),
       };
 
       setGame(normalized);
@@ -874,6 +942,7 @@ function GamePage({
       if (elapsed >= MAX_TIME) {
         const failedResult: CandidateResult = {
           candidate: current.candidateIndex,
+          candidateName: ayahs[current.candidateIndex - 1]?.candidateName || `Candidate ${current.candidateIndex}`,
           identified: false,
           stoppingQuestion: current.attempt,
           time: MAX_TIME,
@@ -1044,6 +1113,9 @@ function GamePage({
 
         candidate:
           game.candidateIndex,
+
+        candidateName:
+          currentAyah?.candidateName || `Candidate ${game.candidateIndex}`,
 
         identified:
           false,
@@ -1242,6 +1314,9 @@ function GamePage({
       candidate:
         game.candidateIndex,
 
+      candidateName:
+        currentAyah?.candidateName || `Candidate ${game.candidateIndex}`,
+
       identified:
         game.ayahIdentified,
 
@@ -1386,17 +1461,11 @@ function GamePage({
   ======================================================= */
 
   const restartEvent = () => {
-    if (game.candidateIndex !== TOTAL_CANDIDATES || game.status !== "result") {
-      return;
-    }
-
     const confirmed = window.confirm(
-      "Restart the event from Candidate 1? All current candidate results will be cleared."
+      "Restart the event from Candidate 1? All current candidate results will be cleared. Ayah setup will remain."
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     updateGame({
       ...initialGame,
@@ -1689,25 +1758,11 @@ function GamePage({
             z-index: 4;
           }
 
-          .ledfx-brand-mark {
-            width: 34px;
-            height: 34px;
-            border: 3px solid var(--led-pink);
-            border-radius: 50%;
-            position: relative;
-            box-shadow: 0 0 13px rgba(255, 49, 95, .45);
-          }
-
-          .ledfx-brand-mark::after {
-            content: "";
-            position: absolute;
-            width: 16px;
-            height: 3px;
-            right: -12px;
-            bottom: -5px;
-            transform: rotate(45deg);
-            background: var(--led-pink);
-            box-shadow: 0 0 8px var(--led-pink);
+          .ledfx-brand-logo {
+            width: clamp(190px, 18vw, 340px);
+            height: auto;
+            display: block;
+            filter: drop-shadow(0 0 12px rgba(255, 49, 95, .34));
           }
 
           .ledfx-brand-name {
@@ -1827,34 +1882,40 @@ function GamePage({
           }
 
           .ledfx-main-title {
-            margin: 0;
-            font-size: clamp(48px, 7.2vw, 138px);
-            line-height: .9;
-            letter-spacing: -.035em;
-            font-weight: 800;
-            color: #ff587a;
-            text-shadow:
-              0 0 8px rgba(255, 88, 122, .85),
-              0 0 28px rgba(255, 49, 95, .6),
-              0 0 72px rgba(145, 13, 44, .5);
-            animation: ledfx-title-breathe 3.5s ease-in-out infinite;
+            display: none;
           }
 
           .ledfx-question-label {
             margin-top: 34px;
-            font-size: clamp(11px, 1vw, 20px);
-            letter-spacing: .55em;
-            font-weight: 500;
+            font-size: clamp(24px, 2.2vw, 44px);
+            letter-spacing: .34em;
+            font-weight: 650;
+            color: var(--led-white);
+            text-shadow: 0 0 14px rgba(255, 88, 122, .25);
+            transition: color .25s ease, text-shadow .25s ease, filter .25s ease;
+          }
+
+          .ledfx-question-label.warning {
+            color: #ff5475;
+            text-shadow: 0 0 10px rgba(255, 49, 95, .9), 0 0 35px rgba(255, 49, 95, .55);
+            animation: ledfx-warning-blink .72s steps(2, start) infinite;
           }
 
           .ledfx-timer {
-            margin-top: 15px;
-            font-size: clamp(44px, 5.4vw, 100px);
+            margin-top: 22px;
+            font-size: clamp(58px, 7vw, 132px);
             line-height: 1;
             font-weight: 300;
             letter-spacing: .035em;
             color: var(--led-white);
             text-shadow: 0 0 22px rgba(255, 255, 255, .22), 0 0 34px rgba(255, 67, 100, .2);
+            transition: color .25s ease, text-shadow .25s ease;
+          }
+
+          .ledfx-timer.warning {
+            color: #ff5b78;
+            text-shadow: 0 0 14px rgba(255, 49, 95, .95), 0 0 45px rgba(255, 49, 95, .65);
+            animation: ledfx-warning-blink .8s steps(2, start) infinite;
           }
 
           .ledfx-instruction {
@@ -1889,40 +1950,81 @@ function GamePage({
             opacity: .68;
           }
 
-          .ledfx-feedback-word,
-          .ledfx-status-title {
-            font-size: clamp(70px, 11vw, 210px);
+          .ledfx-feedback {
+            isolation: isolate;
+          }
+
+          .ledfx-feedback::before,
+          .ledfx-feedback::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: min(55vw, 820px);
+            height: min(55vw, 820px);
+            transform: translate(-50%, -50%) scale(.55);
+            border: 1px solid rgba(255, 79, 120, .16);
+            border-radius: 50%;
+            filter: blur(1px);
+            z-index: -2;
+            animation: ledfx-suspense-ring 2.8s ease-out infinite;
+          }
+
+          .ledfx-feedback::after {
+            width: min(34vw, 500px);
+            height: min(34vw, 500px);
+            border-style: dashed;
+            animation-delay: .65s;
+            animation-duration: 2.2s;
+          }
+
+          .ledfx-feedback-word {
+            position: relative;
+            font-size: clamp(82px, 13vw, 250px);
             line-height: .85;
-            font-weight: 850;
-            letter-spacing: -.05em;
+            font-weight: 900;
+            letter-spacing: -.06em;
             color: var(--led-pink);
             text-shadow: 0 0 18px rgba(255, 79, 120, .8), 0 0 60px rgba(255, 49, 95, .55);
-            animation: ledfx-feedback-in .7s cubic-bezier(.18,.85,.25,1) both;
+            animation: ledfx-feedback-in .7s cubic-bezier(.18,.85,.25,1) both, ledfx-feedback-breathe 1.8s ease-in-out .2s infinite;
+          }
+
+          .ledfx-feedback-word::before,
+          .ledfx-feedback-word::after {
+            content: "";
+            position: absolute;
+            inset: -24px -38px;
+            border-radius: 999px;
+            background: radial-gradient(ellipse, rgba(255, 79, 120, .18), transparent 67%);
+            filter: blur(20px);
+            z-index: -1;
+            animation: ledfx-blur-pulse 1.6s ease-in-out infinite;
+          }
+
+          .ledfx-feedback-word::after {
+            inset: -70px -120px;
+            opacity: .45;
+            animation-delay: .4s;
+            animation-duration: 2.4s;
           }
 
           /* YES = GREEN */
           .ledfx-yes .ledfx-feedback-word {
             color: #35e58a;
-            text-shadow: 0 0 18px rgba(53, 229, 138, .9), 0 0 60px rgba(28, 190, 105, .55);
+            text-shadow: 0 0 18px rgba(53, 229, 138, .95), 0 0 60px rgba(28, 190, 105, .62);
           }
 
-          .ledfx-yes .ledfx-feedback-desc {
-            color: #b9ffd9;
+          .ledfx-yes::before {
+            border-color: rgba(53, 229, 138, .24);
+          }
+
+          .ledfx-yes .ledfx-feedback-word::before,
+          .ledfx-yes .ledfx-feedback-word::after {
+            background: radial-gradient(ellipse, rgba(53, 229, 138, .2), transparent 67%);
           }
 
           .ledfx-no .ledfx-feedback-word {
             color: #ff335f;
-          }
-          .ledfx-feedback-desc {
-            margin-top: 30px;
-            font-size: clamp(12px, 1.1vw, 22px);
-            letter-spacing: .42em;
-          }
-          .ledfx-feedback-next {
-            margin-top: 16px;
-            font-size: clamp(8px, .6vw, 12px);
-            letter-spacing: .38em;
-            opacity: .52;
           }
 
           .ledfx-identified .ledfx-status-title { font-size: clamp(48px, 7vw, 132px); }
@@ -2006,19 +2108,24 @@ function GamePage({
           }
 
           .ledfx-ranking-board {
-            width: min(100%, 1040px);
+            width: min(100%, 1120px);
             display: grid;
-            gap: clamp(7px, 1vh, 12px);
+            gap: clamp(9px, 1vh, 14px);
+          }
+
+          .ledfx-ranking-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
           }
 
           .ledfx-ranking-row {
-            display: grid;
-            grid-template-columns: 90px minmax(220px, 1fr) 160px 150px;
-            align-items: center;
-            min-height: clamp(48px, 6vh, 72px);
-            padding: 0 clamp(14px, 1.8vw, 28px);
-            border: 1px solid rgba(255, 88, 122, .18);
-            background: linear-gradient(90deg, rgba(255, 35, 77, .055), rgba(255, 35, 77, .015));
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: clamp(128px, 15vh, 170px);
+            padding: clamp(14px, 1.5vw, 22px);
+            border: 1px solid rgba(255, 88, 122, .2);
+            border-radius: 20px;
+            background: linear-gradient(145deg, rgba(255, 35, 77, .085), rgba(255, 35, 77, .018));
             box-shadow: inset 0 0 28px rgba(255, 35, 77, .025);
             backdrop-filter: blur(8px);
           }
@@ -2038,15 +2145,19 @@ function GamePage({
           }
 
           .ledfx-rank-candidate {
-            font-size: clamp(12px, 1.1vw, 21px);
-            letter-spacing: .3em;
+            font-size: clamp(12px, 1.05vw, 20px);
+            line-height: 1.25;
+            letter-spacing: .16em;
             text-align: left;
+            min-height: 2.5em;
+            display: flex;
+            align-items: center;
           }
 
           .ledfx-rank-status,
           .ledfx-rank-time {
-            font-size: clamp(10px, .85vw, 17px);
-            letter-spacing: .22em;
+            font-size: clamp(9px, .72vw, 15px);
+            letter-spacing: .18em;
             text-align: right;
           }
 
@@ -2076,18 +2187,15 @@ function GamePage({
             50% { transform: scale(1.008); box-shadow: 0 0 38px rgba(255, 35, 77, .24), inset 0 0 38px rgba(255, 35, 77, .08); }
           }
 
-          @media (max-width: 800px) {
-            .ledfx-ranking-row {
-              grid-template-columns: 55px 1fr 90px;
-              gap: 8px;
+          @media (max-width: 1050px) {
+            .ledfx-ranking-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+          }
 
-            .ledfx-rank-time {
-              display: none;
-            }
-
-            .ledfx-rank-candidate {
-              letter-spacing: .18em;
+          @media (max-width: 600px) {
+            .ledfx-ranking-grid {
+              grid-template-columns: 1fr;
             }
           }
 
@@ -2116,6 +2224,10 @@ function GamePage({
           @keyframes ledfx-particle-float { 0% { transform: translate3d(0, 24px, 0) scale(.7); opacity: 0; } 18% { opacity: .9; } 55% { transform: translate3d(var(--drift), -22px, 0) scale(1); opacity: .65; } 100% { transform: translate3d(calc(var(--drift) * -1), -90px, 0) scale(.35); opacity: 0; } }
           @keyframes ledfx-feedback-in { from { transform: scale(.72); opacity: 0; } to { transform: scale(1); opacity: 1; } }
           @keyframes ledfx-reveal-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+          @keyframes ledfx-warning-blink { 0%, 45% { opacity: 1; } 46%, 100% { opacity: .22; } }
+          @keyframes ledfx-suspense-ring { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.42); } 18% { opacity: .75; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.12); } }
+          @keyframes ledfx-feedback-breathe { 0%, 100% { transform: scale(.98); filter: blur(0); } 50% { transform: scale(1.035); filter: blur(.2px); } }
+          @keyframes ledfx-blur-pulse { 0%, 100% { transform: scale(.85); opacity: .22; } 50% { transform: scale(1.18); opacity: .7; } }
 
           @media (max-aspect-ratio: 4/3) {
             .ledfx-top-wave { width: 55vw; }
@@ -2180,11 +2292,11 @@ function GamePage({
         </div>
 
         <div className="ledfx-brand">
-          <div className="ledfx-brand-mark" />
-          <div>
-            <div className="ledfx-brand-name">QURIVERSE</div>
-            <div className="ledfx-brand-tag">EXPLORE • LEARN • BELONG</div>
-          </div>
+          <img
+            className="ledfx-brand-logo"
+            src="/logo.svg"
+            alt="Quriverse"
+          />
         </div>
 
         <div className="ledfx-top-right">
@@ -2222,13 +2334,18 @@ function GamePage({
         {game.status === "question" && (
           <div className="led-center ledfx-center">
             <div className="ledfx-candidate">
-              CANDIDATE {String(game.candidateIndex).padStart(2, "0")}
+              {currentAyah?.candidateName || `CANDIDATE ${String(game.candidateIndex).padStart(2, "0")}`}
             </div>
-            <div className="ledfx-main-title">TIME / LIMIT</div>
-            <div className="ledfx-question-label">
+            <div
+              className={`ledfx-question-label ${game.attempt >= 13 ? "warning" : ""}`}
+            >
               QUESTION {String(game.attempt).padStart(2, "0")} / {MAX_QUESTIONS}
             </div>
-            <div className="ledfx-timer">{formatTime(ledElapsed)}</div>
+            <div
+              className={`ledfx-timer ${ledElapsed >= 210 ? "warning" : ""}`}
+            >
+              {formatTime(ledElapsed)}
+            </div>
             <div className="ledfx-instruction">ASK YOUR QUESTION</div>
           </div>
         )}
@@ -2237,8 +2354,6 @@ function GamePage({
         {game.status === "yes" && (
           <div className="led-center ledfx-center ledfx-feedback yes ledfx-yes">
             <div className="ledfx-feedback-word">YES</div>
-            <div className="ledfx-feedback-desc">CORRECT ANSWER</div>
-            <div className="ledfx-feedback-next">NEXT QUESTION</div>
           </div>
         )}
 
@@ -2246,8 +2361,6 @@ function GamePage({
         {game.status === "no" && (
           <div className="led-center ledfx-center ledfx-feedback no ledfx-no">
             <div className="ledfx-feedback-word">NO</div>
-            <div className="ledfx-feedback-desc">WRONG ANSWER</div>
-            <div className="ledfx-feedback-next">NEXT QUESTION</div>
           </div>
         )}
 
@@ -2304,13 +2417,14 @@ function GamePage({
         {game.status === "result" && game.result && game.candidateIndex < TOTAL_CANDIDATES && (
           <div className="led-center ledfx-center led-result">
             <div className="ledfx-result-candidate">
-              CANDIDATE {String(game.result.candidate).padStart(2, "0")}
+              {game.result.candidateName || `CANDIDATE ${String(game.result.candidate).padStart(2, "0")}`}
             </div>
             <div className="ledfx-result-title">
               {game.result.identified ? "IDENTIFIED" : "NOT IDENTIFIED"}
             </div>
             <div className="ledfx-result-details">
-              QUESTION {game.result.stoppingQuestion}<br />
+              QUESTION {String(game.result.stoppingQuestion).padStart(2, "0")} / {MAX_QUESTIONS}
+              <br />
               TIME {formatTime(game.result.time)}
             </div>
           </div>
@@ -2322,7 +2436,7 @@ function GamePage({
             <div className="ledfx-final-title">FINAL LEADERBOARD</div>
             <div className="ledfx-final-subtitle">THE RESULT IS IN</div>
 
-            <div className="ledfx-ranking-board">
+            <div className="ledfx-ranking-board ledfx-ranking-grid">
               {sortedResults.map((result, index) => (
                 <div
                   className={`ledfx-ranking-row ${index === 0 ? "winner" : ""}`}
@@ -2333,7 +2447,7 @@ function GamePage({
                   </div>
 
                   <div className="ledfx-rank-candidate">
-                    CANDIDATE {String(result.candidate).padStart(2, "0")}
+                    {result.candidateName || `CANDIDATE ${String(result.candidate).padStart(2, "0")}`}
                   </div>
 
                   <div className={`ledfx-rank-status ${result.identified ? "solved" : "failed"}`}>
@@ -2349,7 +2463,7 @@ function GamePage({
 
             {sortedResults.length > 0 && (
               <div className="ledfx-winner-line">
-                WINNER • CANDIDATE {String(sortedResults[0].candidate).padStart(2, "0")}
+                WINNER • {sortedResults[0].candidateName || `CANDIDATE ${String(sortedResults[0].candidate).padStart(2, "0")}`}
               </div>
             )}
           </div>
@@ -2377,6 +2491,73 @@ function GamePage({
           border-color: rgba(255, 88, 122, .9);
           box-shadow: 0 0 24px rgba(255, 35, 77, .16);
         }
+
+        .moderator-header-actions, .setup-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .event-restart-top-button {
+          border: 1px solid rgba(255, 88, 122, .38);
+          background: rgba(255, 35, 77, .045);
+          color: #ff91a8;
+          padding: 9px 14px;
+          border-radius: 10px;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: .16em;
+          cursor: pointer;
+          transition: .2s ease;
+        }
+
+        .event-restart-top-button:hover {
+          color: #fff;
+          border-color: #ff587a;
+          box-shadow: 0 0 20px rgba(255, 49, 95, .2);
+        }
+
+        .final-results-grid {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+          margin-top: 18px;
+        }
+
+        .ranking-card {
+          min-height: 118px;
+          padding: 15px;
+          border: 1px solid rgba(255, 88, 122, .22);
+          border-radius: 18px;
+          background: linear-gradient(145deg, rgba(255, 35, 77, .075), rgba(255, 35, 77, .018));
+          box-shadow: inset 0 0 25px rgba(255, 35, 77, .025);
+        }
+
+        .ranking-card.winner {
+          border-color: rgba(255, 88, 122, .7);
+          box-shadow: 0 0 24px rgba(255, 35, 77, .15), inset 0 0 25px rgba(255, 35, 77, .06);
+        }
+
+        .ranking-card-top, .ranking-card-stats {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .ranking-card-top strong { color: #ff587a; font-size: 20px; }
+        .ranking-card-top span { font-size: 8px; letter-spacing: .18em; opacity: .62; }
+        .ranking-card-name { margin: 17px 0; font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ranking-card-stats { font-size: 10px; letter-spacing: .14em; opacity: .75; }
+
+        @media (max-width: 900px) {
+          .final-results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        @media (max-width: 560px) {
+          .final-results-grid { grid-template-columns: 1fr; }
+          .moderator-header-actions, .setup-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+        }
       `}</style>
 
       <header className="moderator-header">
@@ -2391,12 +2572,22 @@ function GamePage({
         </div>
 
 
-        <a
-          href="/setup"
-          className="setup-link"
-        >
-          AYAH SETUP
-        </a>
+        <div className="moderator-header-actions">
+          <button
+            type="button"
+            className="event-restart-top-button"
+            onClick={restartEvent}
+          >
+            ↻ RESTART EVENT
+          </button>
+
+          <a
+            href="/setup"
+            className="setup-link"
+          >
+            AYAH SETUP
+          </a>
+        </div>
 
       </header>
 
@@ -2410,12 +2601,7 @@ function GamePage({
           CANDIDATE{" "}
 
           <strong>
-            {String(
-              game.candidateIndex
-            ).padStart(
-              2,
-              "0"
-            )}
+            {currentAyah?.candidateName || `CANDIDATE ${String(game.candidateIndex).padStart(2, "0")}`}
           </strong>
 
           <span>
@@ -2690,11 +2876,7 @@ function GamePage({
             <div className="candidate-result">
 
               <div>
-                CANDIDATE{" "}
-                {
-                  game.result
-                    ?.candidate
-                }
+                {game.result?.candidateName || `CANDIDATE ${String(game.result?.candidate ?? game.candidateIndex).padStart(2, "0")}`}
               </div>
 
 
@@ -2707,18 +2889,9 @@ function GamePage({
 
 
               <span>
-                QUESTION{" "}
-                {
-                  game.result
-                    ?.stoppingQuestion
-                }
-
+                QUESTION {game.result?.stoppingQuestion} / {MAX_QUESTIONS}
                 {" • "}
-
-                {game.result &&
-                  formatTime(
-                    game.result.time
-                  )}
+                TIME {game.result && formatTime(game.result.time)}
               </span>
 
             </div>
@@ -2755,57 +2928,26 @@ function GamePage({
                 </h2>
 
 
-                {sortedResults.map(
-                  (
-                    result,
-                    index
-                  ) => (
-
+                <div className="final-results-grid">
+                  {sortedResults.map((result, index) => (
                     <div
-                      className="ranking"
-                      key={
-                        result.candidate
-                      }
+                      className={`ranking-card ${index === 0 ? "winner" : ""}`}
+                      key={result.candidate}
                     >
-
-                      <strong>
-                        #{index + 1}
-                      </strong>
-
-                      <span>
-                        CANDIDATE{" "}
-                        {String(
-                          result.candidate
-                        ).padStart(
-                          2,
-                          "0"
-                        )}
-                      </span>
-
-                      <span>
-                        {result.identified
-                          ? `Q${result.stoppingQuestion}`
-                          : "FAILED"}
-                      </span>
-
-                      <span>
-                        {formatTime(
-                          result.time
-                        )}
-                      </span>
-
+                      <div className="ranking-card-top">
+                        <strong>#{index + 1}</strong>
+                        <span>{result.identified ? "SOLVED" : "FAILED"}</span>
+                      </div>
+                      <div className="ranking-card-name">
+                        {result.candidateName || `CANDIDATE ${String(result.candidate).padStart(2, "0")}`}
+                      </div>
+                      <div className="ranking-card-stats">
+                        <span>Q {String(result.stoppingQuestion).padStart(2, "0")}</span>
+                        <span>{formatTime(result.time)}</span>
+                      </div>
                     </div>
-
-                  )
-                )}
-
-                <button
-                  className="main-button restart-event-button"
-                  onClick={restartEvent}
-                >
-                  RESTART EVENT FROM CANDIDATE 1
-                  <span>↻</span>
-                </button>
+                  ))}
+                </div>
 
               </div>
             )}
