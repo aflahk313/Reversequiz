@@ -1382,6 +1382,32 @@ function GamePage({
 
 
   /* =======================================================
+     RESTART EVENT
+  ======================================================= */
+
+  const restartEvent = () => {
+    if (game.candidateIndex !== TOTAL_CANDIDATES || game.status !== "result") {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Restart the event from Candidate 1? All current candidate results will be cleared."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    updateGame({
+      ...initialGame,
+      audioEnabled: game.audioEnabled,
+      musicPlaying: game.musicPlaying,
+      musicVolume: game.musicVolume,
+    });
+  };
+
+
+  /* =======================================================
      AUDIO CONTROLS
   ======================================================= */
 
@@ -2339,6 +2365,20 @@ function GamePage({
   return (
     <div className="app moderator-screen">
 
+      <style>{`
+        .restart-event-button {
+          margin-top: 18px;
+          width: 100%;
+          border-color: rgba(255, 88, 122, .55);
+          background: rgba(255, 35, 77, .06);
+        }
+
+        .restart-event-button:hover {
+          border-color: rgba(255, 88, 122, .9);
+          box-shadow: 0 0 24px rgba(255, 35, 77, .16);
+        }
+      `}</style>
+
       <header className="moderator-header">
 
         <div className="brand">
@@ -2758,6 +2798,14 @@ function GamePage({
 
                   )
                 )}
+
+                <button
+                  className="main-button restart-event-button"
+                  onClick={restartEvent}
+                >
+                  RESTART EVENT FROM CANDIDATE 1
+                  <span>↻</span>
+                </button>
 
               </div>
             )}
