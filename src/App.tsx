@@ -546,6 +546,7 @@ function GamePage({
     );
 
   const [ledAudioUnlocked, setLedAudioUnlocked] = useState(false);
+  const [ledLogoFailed, setLedLogoFailed] = useState(false);
   const [firebaseConnected, setFirebaseConnected] = useState(false);
 
 
@@ -674,6 +675,18 @@ function GamePage({
         "/audio/buzz.mp3"
       );
 
+    [
+      musicRef.current,
+      correctRef.current,
+      wrongRef.current,
+      identifiedRef.current,
+      revealRef.current,
+      startRef.current,
+      buzzRef.current,
+    ].forEach((audio) => {
+      if (audio) audio.preload = "auto";
+    });
+
 
     return () => {
 
@@ -709,34 +722,55 @@ function GamePage({
    * Audio helper.
    */
 
+  const unlockLedAudio = () => {
+    if (!isLED) return;
+
+    setLedAudioUnlocked(true);
+
+    // Prime the audio elements from a real user gesture so later
+    // Firebase-driven sounds are allowed by the browser.
+    [
+      musicRef.current,
+      correctRef.current,
+      wrongRef.current,
+      identifiedRef.current,
+      revealRef.current,
+      startRef.current,
+      buzzRef.current,
+    ].forEach((audio) => {
+      if (!audio) return;
+      audio.load();
+    });
+  };
+
   const playSound = (
-    audio: HTMLAudioElement | null
+    audio: HTMLAudioElement | null,
+    force = false
   ) => {
+    if (!audio) return;
 
-    if (!game.audioEnabled) {
-      return;
-    }
-
-    if (isLED && !ledAudioUnlocked) {
-      return;
-    }
-
-    if (!audio) {
-      return;
-    }
+    if (!force && !game.audioEnabled) return;
+    if (isLED && !ledAudioUnlocked) return;
 
     audio.currentTime = 0;
-
-    audio
-      .play()
-      .catch(() => {
-        /*
-         * Browser may block playback
-         * until the LED page has been
-         * interacted with once.
-         */
-      });
+    audio.play().catch((error) => {
+      console.warn("LED audio playback was blocked:", error);
+    });
   };
+
+
+  useEffect(() => {
+    if (!isLED || ledAudioUnlocked) return;
+
+    const unlock = () => unlockLedAudio();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [isLED, ledAudioUnlocked]);
 
 
   /*
@@ -824,9 +858,11 @@ function GamePage({
 
     if (game.status === "timeout") {
       musicRef.current?.pause();
-      playSound(
-        buzzRef.current
-      );
+      if (musicRef.current) musicRef.current.currentTime = 0;
+
+      // The timeout buzzer is mandatory and does not depend on the
+      // moderator's optional event-audio toggle.
+      playSound(buzzRef.current, true);
     }
 
 
@@ -1765,6 +1801,52 @@ function GamePage({
             filter: drop-shadow(0 0 12px rgba(255, 49, 95, .34));
           }
 
+          .ledfx-logo-fallback {
+            display: grid;
+            grid-template-columns: auto auto;
+            align-items: center;
+            column-gap: 10px;
+            position: relative;
+          }
+
+          .ledfx-logo-mark {
+            width: 34px;
+            height: 34px;
+            border: 3px solid #ff587a;
+            border-radius: 50%;
+            color: transparent;
+            box-shadow: 0 0 18px rgba(255, 88, 122, .35);
+            position: relative;
+          }
+
+          .ledfx-logo-mark::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 3px;
+            background: #ff587a;
+            right: -12px;
+            bottom: 0;
+            transform: rotate(45deg);
+            transform-origin: left center;
+          }
+
+          .ledfx-logo-word {
+            font-size: clamp(22px, 1.7vw, 38px);
+            font-weight: 800;
+            letter-spacing: .18em;
+            color: #fff;
+            text-shadow: 0 0 16px rgba(255, 88, 122, .22);
+          }
+
+          .ledfx-logo-tag {
+            grid-column: 2;
+            margin-top: -7px;
+            font-size: 7px;
+            letter-spacing: .36em;
+            opacity: .72;
+          }
+
           .ledfx-brand-name {
             font-size: clamp(16px, 1.55vw, 28px);
             letter-spacing: .38em;
@@ -2292,11 +2374,20 @@ function GamePage({
         </div>
 
         <div className="ledfx-brand">
-          <img
-            className="ledfx-brand-logo"
-            src="/logo.png"
-            alt="Quriverse"
-          />
+          {!ledLogoFailed ? (
+            <img
+              className="ledfx-brand-logo"
+              src="/logo.svg"
+              alt="Quriverse"
+              onError={() => setLedLogoFailed(true)}
+            />
+          ) : (
+            <div className="ledfx-logo-fallback" aria-label="Quriverse">
+              <span className="ledfx-logo-mark">Q</span>
+              <span className="ledfx-logo-word">QURIVERSE</span>
+              <span className="ledfx-logo-tag">EXPLORE · LEARN · BELONG</span>
+            </div>
+          )}
         </div>
 
         <div className="ledfx-top-right">
@@ -2315,7 +2406,7 @@ function GamePage({
         {!ledAudioUnlocked && (
           <button
             className="led-audio-unlock ledfx-audio-unlock"
-            onClick={() => setLedAudioUnlocked(true)}
+            onClick={unlockLedAudio}
           >
             ENABLE AUDIO
           </button>
